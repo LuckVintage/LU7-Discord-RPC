@@ -56,7 +56,7 @@ class DiscordRPCApp(QWidget):
         self.setFixedSize(self.sizeHint())
 
         # Set application icon
-        icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.png")
+        icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.icns")
         self.setWindowIcon(QIcon(icon_path))
 
         # Set background and foreground colors
