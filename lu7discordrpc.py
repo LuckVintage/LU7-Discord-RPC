@@ -28,14 +28,15 @@ class DiscordRPCApp(QWidget):
         self.large_image_label = QLabel("Large Image:")
         self.large_image_entry = QLineEdit()
 
-        self.start_button = QPushButton("Start RPC")
-        self.start_button.clicked.connect(self.start_rpc)
-
-        self.stop_button = QPushButton("Stop RPC")
-        self.stop_button.clicked.connect(self.stop_rpc)
+        self.toggle_button = QPushButton("Start RPC")
+        self.toggle_button.clicked.connect(self.toggle_rpc)
+        self.toggle_button.setStyleSheet("background-color: green; color: white;")
 
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
+
+        self.version_label = QLabel("v1.0.2 - 31 Jan 24")
+        self.version_label.setAlignment(Qt.AlignCenter)
 
         layout = QFormLayout()
         layout.addRow(self.client_id_label, self.client_id_entry)
@@ -44,8 +45,9 @@ class DiscordRPCApp(QWidget):
         layout.addRow(self.small_image_label, self.small_image_entry)
         layout.addRow(self.large_text_label, self.large_text_entry)
         layout.addRow(self.large_image_label, self.large_image_entry)
-        layout.addRow(self.start_button, self.stop_button)
+        layout.addRow(self.toggle_button)
         layout.addRow(self.current_status_label)
+        layout.addRow(self.version_label)
 
         self.setLayout(layout)
 
@@ -74,15 +76,9 @@ QWidget {
 }
 
 QPushButton {
-    background-color: #4CAF50;
-    color: white;
     padding: 0px 20px;
     border: none;
     border-radius: 4px;
-}
-
-QPushButton:hover {
-    background-color: #45a049;
 }
 
 QLineEdit {
@@ -99,6 +95,16 @@ QLabel {
 
         self.setStyleSheet(stylesheet)
 
+        # Initialize RPC object to None
+        self.rpc_obj = None
+        self.rpc_started = False  # Added variable to track RPC state
+
+    def toggle_rpc(self):
+        if self.rpc_started:
+            self.stop_rpc()
+        else:
+            self.start_rpc()
+
     def start_rpc(self):
         self.client_id = self.client_id_entry.text()
         try:
@@ -106,6 +112,8 @@ QLabel {
             self.start_time = mktime(time.localtime())
             self.update_rpc_activity()
             self.update_status_label()
+            self.toggle_button.setStyleSheet("background-color: red; color: white;")
+            self.toggle_button.setText("Stop RPC")
             QMessageBox.information(self, "Success", "RPC started successfully.")
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error starting RPC: {str(e)}. Make sure Discord is currently running!")
@@ -116,7 +124,9 @@ QLabel {
                 self.rpc_obj.close()
                 self.rpc_obj = None  # Set to None after stopping
                 self.update_status_label()
-                QMessageBox.information(self, "Success", "RPC stopped successfully.")
+                self.toggle_button.setStyleSheet("background-color: green; color: white;")
+                self.toggle_button.setText("Start RPC")
+                QMessageBox.information(self, "Success", "RPC stopped successfully. It may take a few seconds for Discord to register the change.")
             else:
                 QMessageBox.warning(self, "Warning", "No active RPC to stop.")
         except Exception as e:
@@ -140,9 +150,11 @@ QLabel {
         if self.rpc_obj:
             self.current_status_label.setText("Current Status: Started")
             self.current_status_label.setStyleSheet("color: green;")
+            self.rpc_started = True
         else:
             self.current_status_label.setText("Current Status: Stopped")
             self.current_status_label.setStyleSheet("color: red;")
+            self.rpc_started = False
 
     def save_data(self):
         # Save data to a file
