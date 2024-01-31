@@ -1,0 +1,8 @@
+{
+  "title": "LU7 Discord RPC Installer",
+  "icon": "logo.icns",
+  "contents": [
+    { "x": 448, "y": 144, "type": "link", "path": "/Applications" },
+    { "x": 192, "y": 144, "type": "file", "path": "LU7 Discord RPC.app" }
+  ]
+}
