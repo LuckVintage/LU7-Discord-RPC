@@ -7,13 +7,19 @@ from PyQt5.QtWidgets import (
     QVBoxLayout,
     QFormLayout,
     QMessageBox,
+    QSizePolicy,
+    QInputDialog,
+    QListWidget,
+    QHBoxLayout,
 )
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPalette, QColor, QIcon
+from PyQt5.QtCore import Qt, QTimer, QUrl
+from PyQt5.QtGui import QPalette, QColor, QIcon, QDesktopServices
 import rpc
 import time
 from time import mktime
 import os
+import requests
+
 
 
 class DiscordRPCApp(QWidget):
@@ -75,12 +81,23 @@ class DiscordRPCApp(QWidget):
             "toggleButton"
         )  # Set an object name for the toggle button
         self.toggle_button.clicked.connect(self.toggle_rpc)
-        self.toggle_button.setStyleSheet("background-color: green; color: white;")
+        self.toggle_button.setStyleSheet("""
+    QPushButton#toggleButton {
+        background-color: green;
+        color: white;
+        padding: 13px 20px;
+        border: none;
+        border-radius: 4px;
+    }
+    QPushButton#toggleButton:hover {
+        background-color: darkgreen;
+    }
+""")
 
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.3-alpha - 01 Feb 24")
+        self.version_label = QLabel("v1.0.4-alpha - 02 Feb 24")
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -102,7 +119,6 @@ class DiscordRPCApp(QWidget):
         self.large_text_entry.setFixedSize(140, 25)
         self.large_image_entry.setFixedSize(140, 25)
 
-
         # Set alignment to the top
         self.client_id_label.setAlignment(Qt.AlignTop)
         self.state_label.setAlignment(Qt.AlignTop)
@@ -110,14 +126,16 @@ class DiscordRPCApp(QWidget):
         self.small_image_label.setAlignment(Qt.AlignTop)
         self.large_text_label.setAlignment(Qt.AlignTop)
         self.large_image_label.setAlignment(Qt.AlignTop)
+        
 
-        self.client_id_entry.setToolTipDuration(5000)  # Set tooltip duration in milliseconds
+        self.client_id_entry.setToolTipDuration(
+            5000
+        )  # Set tooltip duration in milliseconds
         self.state_entry.setToolTipDuration(5000)
         self.small_text_entry.setToolTipDuration(5000)
         self.small_image_entry.setToolTipDuration(5000)
         self.large_text_entry.setToolTipDuration(5000)
         self.large_image_entry.setToolTipDuration(5000)
-
 
         layout = QFormLayout()
         layout.addRow(self.client_id_label, self.client_id_entry)
@@ -126,15 +144,60 @@ class DiscordRPCApp(QWidget):
         layout.addRow(self.small_image_label, self.small_image_entry)
         layout.addRow(self.large_text_label, self.large_text_entry)
         layout.addRow(self.large_image_label, self.large_image_entry)
+        # Add preset buttons with styles
+        self.save_preset_button = QPushButton("Save Preset")
+        self.save_preset_button.clicked.connect(self.save_preset)
+        self.save_preset_button.setStyleSheet("""
+            QPushButton {
+                background-color: #007BFF;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+        self.load_preset_button = QPushButton("Load Preset")
+        self.load_preset_button.clicked.connect(self.load_preset)
+        self.load_preset_button.setStyleSheet("""
+            QPushButton {
+                background-color: #007BFF;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """)
+
+        # Create a horizontal layout for the buttons
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.save_preset_button)
+        button_layout.addWidget(self.load_preset_button)
+
+        # Add the horizontal layout to the main form layout
+        layout.addRow(button_layout)
+
+
+
         layout.addRow(self.toggle_button)
         layout.addRow(self.current_status_label)
         layout.addRow(self.version_label)
         layout.addRow(self.prodwarning_label)
 
+
         self.setLayout(layout)
 
         # Load data from file
         self.load_data()
+
+        # Check for updates using QTimer after a short delay (adjust as needed)
+        QTimer.singleShot(5000, self.check_for_updates)
 
         # Set fixed size policy to prevent resizing
         self.setFixedSize(self.sizeHint())
@@ -157,14 +220,6 @@ QWidget {
     background-color: #f0f0f0;
     color: #333;
     font-family: Arial, sans-serif;
-}
-
-
-QPushButton#toggleButton {
-    padding: 13px 20px;
-    border: none;
-    border-radius: 4px;
-    min-height: 13px; /* Set the minimum height for the button */
 }
 
 QLineEdit {
@@ -198,7 +253,18 @@ QLabel {
             self.start_time = mktime(time.localtime())
             self.update_rpc_activity()
             self.update_status_label()
-            self.toggle_button.setStyleSheet("background-color: red; color: white;")
+            self.toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: red;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: darkred;
+            }
+        """)
             self.toggle_button.setText("Stop RPC")
             QMessageBox.information(self, "Success", "RPC started successfully.")
         except Exception as e:
@@ -214,9 +280,18 @@ QLabel {
                 self.rpc_obj.close()
                 self.rpc_obj = None  # Set to None after stopping
                 self.update_status_label()
-                self.toggle_button.setStyleSheet(
-                    "background-color: green; color: white;"
-                )
+                self.toggle_button.setStyleSheet("""
+            QPushButton {
+                background-color: green;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: darkgreen;
+            }
+        """)
                 self.toggle_button.setText("Start RPC")
                 QMessageBox.information(
                     self,
@@ -253,7 +328,7 @@ QLabel {
             self.rpc_started = False
 
     def save_data(self):
-        # Save data to a file
+        # Save data to a file in 'LU7 RP' folder
         data = {
             "client_id": self.client_id_entry.text(),
             "state": self.state_entry.text(),
@@ -263,14 +338,19 @@ QLabel {
             "large_image": self.large_image_entry.text(),
         }
 
-        file_path = os.path.join(os.path.expanduser("~"), "discord_rpc_data.txt")
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+        os.makedirs(folder_path, exist_ok=True)
+
+        file_path = os.path.join(folder_path, "discord_rpc_data.txt")
         with open(file_path, "w") as file:
             for key, value in data.items():
                 file.write(f"{key}={value}\n")
 
     def load_data(self):
-        # Load data from a file
-        file_path = os.path.join(os.path.expanduser("~"), "discord_rpc_data.txt")
+        # Load data from a file in 'LU7 RP' folder
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+        file_path = os.path.join(folder_path, "discord_rpc_data.txt")
+
         try:
             with open(file_path, "r") as file:
                 for line in file:
@@ -294,6 +374,121 @@ QLabel {
         # Save data when the application is closed
         self.save_data()
         event.accept()
+
+    def save_preset(self):
+        # Save the current data to a preset slot in 'LU7 RP' folder
+        preset_name, ok = QInputDialog.getText(
+            self, 'Save Preset', 'Enter Preset Name:')
+        if ok and preset_name:
+            data = {
+                "client_id": self.client_id_entry.text(),
+                "state": self.state_entry.text(),
+                "small_text": self.small_text_entry.text(),
+                "small_image": self.small_image_entry.text(),
+                "large_text": self.large_text_entry.text(),
+                "large_image": self.large_image_entry.text(),
+            }
+
+            folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+            os.makedirs(folder_path, exist_ok=True)
+
+            file_path = os.path.join(folder_path, f"{preset_name}_preset.txt")
+            with open(file_path, "w") as file:
+                for key, value in data.items():
+                    file.write(f"{key}={value}\n")
+
+            QMessageBox.information(self, "Success", f"Preset '{preset_name}' saved successfully.")
+
+    def load_preset(self):
+        # Load data from a preset slot in 'LU7 RP' folder
+        preset_list = self.get_available_presets()
+
+        if not preset_list:
+            QMessageBox.warning(self, "Warning", "No presets found.")
+            return
+
+        preset_name, ok = QInputDialog.getItem(self, "Load Preset", "Select a Preset:", preset_list, 0, False)
+
+        if ok:
+            folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+            file_path = os.path.join(folder_path, f"{preset_name}_preset.txt")
+
+            try:
+                with open(file_path, "r") as file:
+                    for line in file:
+                        key, value = line.strip().split("=")
+                        if key == "client_id":
+                            self.client_id_entry.setText(value)
+                        elif key == "state":
+                            self.state_entry.setText(value)
+                        elif key == "small_text":
+                            self.small_text_entry.setText(value)
+                        elif key == "small_image":
+                            self.small_image_entry.setText(value)
+                        elif key == "large_text":
+                            self.large_text_entry.setText(value)
+                        elif key == "large_image":
+                            self.large_image_entry.setText(value)
+                QMessageBox.information(self, "Success", f"Preset '{preset_name}' loaded successfully.")
+            except FileNotFoundError:
+                QMessageBox.warning(self, "Warning", f"Preset '{preset_name}' not found.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Error loading preset '{preset_name}': {str(e)}")
+
+    def get_available_presets(self):
+        # Get a list of available presets
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+        preset_files = [file for file in os.listdir(folder_path) if file.endswith("_preset.txt")]
+        return [file.split("_preset.txt")[0] for file in preset_files]
+
+    def check_for_updates(self):
+        try:
+            # Replace 'https://lu7rpcupdate.pages.dev/version.txt' with the URL of the text file containing the latest version number
+            update_url = 'https://lu7rpcupdate.pages.dev/version.txt'
+
+            # Fetch the latest version number using requests
+            response = requests.get(update_url, headers={'User-Agent': 'Mozilla/5.0'})
+            response.raise_for_status()
+
+            latest_version = response.text.strip()
+
+            # Compare the versions
+            if latest_version != self.version_label.text():
+                # Custom QMessageBox with "Download" and "I'll update later" buttons
+                msg_box = QMessageBox()
+                msg_box.setWindowTitle("Update Available")
+                msg_box.setText(f"A new version ({latest_version}) is available!")
+                msg_box.setIcon(QMessageBox.Information)
+                
+                # Add a "I'll update later" button
+                later_button = QPushButton("I'll update later")
+                msg_box.addButton(later_button, QMessageBox.RejectRole)
+
+                # Add a spacer to push the "Download" button to the right
+                spacer = QWidget()
+                spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+                msg_box.layout().addWidget(spacer, msg_box.layout().rowCount(), 0, 1, msg_box.layout().columnCount())
+
+                # Add a "Download" button
+                download_button = QPushButton("Download now from Github")
+                msg_box.addButton(download_button, QMessageBox.AcceptRole)
+
+                # Connect button clicks to corresponding functions
+                download_button.clicked.connect(lambda: self.open_download_link('https://github.com/LuckVintage/LU7-Discord-RPC/releases'))
+                later_button.clicked.connect(msg_box.reject)
+
+                msg_box.exec_()
+
+        except requests.exceptions.RequestException as e:
+            # Print the exception details
+            print(f"Error during update check: {str(e)}")
+
+            # Non-blocking message box
+            QMessageBox.warning(None, "Update Check Failed", f"Failed to check for updates. See console for error details.")
+
+    def open_download_link(self, link):
+        # Open the download link in the default web browser
+        QDesktopServices.openUrl(QUrl(link))
 
 
 if __name__ == "__main__":
