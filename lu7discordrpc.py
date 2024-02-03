@@ -19,6 +19,7 @@ import time
 from time import mktime
 import os
 import requests
+import json
 
 
 
@@ -85,7 +86,7 @@ class DiscordRPCApp(QWidget):
     QPushButton#toggleButton {
         background-color: green;
         color: white;
-        padding: 13px 20px;
+        padding: 10px 15px;
         border: none;
         border-radius: 4px;
     }
@@ -97,7 +98,7 @@ class DiscordRPCApp(QWidget):
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.4-alpha - 02 Feb 24")
+        self.version_label = QLabel("v1.0.5-alpha - 03 Feb 24")
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -110,6 +111,7 @@ class DiscordRPCApp(QWidget):
         self.large_text_label.setMinimumHeight(40)
         self.large_image_label.setMinimumHeight(40)
         self.prodwarning_label.setFixedSize(260, 20)
+
 
         # set fixed height for QLineEdit
         self.client_id_entry.setFixedSize(140, 25)
@@ -175,6 +177,26 @@ class DiscordRPCApp(QWidget):
             }
         """)
 
+        # Create "Update Presence" button
+        self.update_presence_button = QPushButton("Update Presence")
+        self.update_presence_button.setObjectName("updatePresenceButton")
+        self.update_presence_button.clicked.connect(self.update_presence)
+        self.update_presence_button.setStyleSheet("""
+            QPushButton#updatePresenceButton {
+                background-color: purple;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton#updatePresenceButton:hover {
+                background-color: #4C00A4;
+            }
+        """)
+
+        # Initially hide the "Update Presence" button
+        self.update_presence_button.hide()
+
         # Create a horizontal layout for the buttons
         button_layout = QHBoxLayout()
         button_layout.addWidget(self.save_preset_button)
@@ -183,10 +205,10 @@ class DiscordRPCApp(QWidget):
         # Add the horizontal layout to the main form layout
         layout.addRow(button_layout)
 
-
-
         layout.addRow(self.toggle_button)
+        layout.addRow(self.update_presence_button)
         layout.addRow(self.current_status_label)
+        layout.setVerticalSpacing(5)
         layout.addRow(self.version_label)
         layout.addRow(self.prodwarning_label)
 
@@ -246,6 +268,9 @@ QLabel {
         else:
             self.start_rpc()
 
+        # Show or hide the "Update Presence" button based on RPC state
+        self.update_presence_button.setVisible(self.rpc_started)
+
     def start_rpc(self):
         self.client_id = self.client_id_entry.text()
         try:
@@ -303,10 +328,16 @@ QLabel {
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Error stopping RPC: {str(e)}")
 
+    def update_presence(self):
+        # Stop and start the RPC again to update the presence
+        self.update_rpc_activity()
+        QMessageBox.information(self, "Update Success", "Presence updated successfully.")
+
     def update_rpc_activity(self):
+        current_time = mktime(time.localtime())
         activity = {
             "state": self.state_entry.text(),
-            "timestamps": {"start": self.start_time},
+            "timestamps": {"start": current_time},
             "assets": {
                 "small_text": self.small_text_entry.text(),
                 "small_image": self.small_image_entry.text(),
@@ -315,7 +346,7 @@ QLabel {
             },
         }
         self.rpc_obj.set_activity(activity)
-        self.start_time = mktime(time.localtime())
+        self.start_time = current_time
 
     def update_status_label(self):
         if self.rpc_obj:
@@ -328,7 +359,7 @@ QLabel {
             self.rpc_started = False
 
     def save_data(self):
-        # Save data to a file in 'LU7 RP' folder
+        # Save data to a file in 'LU7 RP' folder using JSON format
         data = {
             "client_id": self.client_id_entry.text(),
             "state": self.state_entry.text(),
@@ -341,32 +372,26 @@ QLabel {
         folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
         os.makedirs(folder_path, exist_ok=True)
 
-        file_path = os.path.join(folder_path, "discord_rpc_data.txt")
+        file_path = os.path.join(folder_path, "discord_rpc_data.json")
         with open(file_path, "w") as file:
-            for key, value in data.items():
-                file.write(f"{key}={value}\n")
+            json.dump(data, file, indent=4)  # Use json.dump to write data in JSON format
 
     def load_data(self):
-        # Load data from a file in 'LU7 RP' folder
+        # Load data from a file in 'LU7 RP' folder using JSON format
         folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
-        file_path = os.path.join(folder_path, "discord_rpc_data.txt")
+        file_path = os.path.join(folder_path, "discord_rpc_data.json")
 
         try:
             with open(file_path, "r") as file:
-                for line in file:
-                    key, value = line.strip().split("=")
-                    if key == "client_id":
-                        self.client_id_entry.setText(value)
-                    elif key == "state":
-                        self.state_entry.setText(value)
-                    elif key == "small_text":
-                        self.small_text_entry.setText(value)
-                    elif key == "small_image":
-                        self.small_image_entry.setText(value)
-                    elif key == "large_text":
-                        self.large_text_entry.setText(value)
-                    elif key == "large_image":
-                        self.large_image_entry.setText(value)
+                data = json.load(file)  # Use json.load to read data in JSON format
+
+                # Update QLineEdit widgets with loaded data
+                self.client_id_entry.setText(data.get("client_id", ""))
+                self.state_entry.setText(data.get("state", ""))
+                self.small_text_entry.setText(data.get("small_text", ""))
+                self.small_image_entry.setText(data.get("small_image", ""))
+                self.large_text_entry.setText(data.get("large_text", ""))
+                self.large_image_entry.setText(data.get("large_image", ""))
         except FileNotFoundError:
             pass  # Ignore if the file is not found
 
@@ -376,7 +401,7 @@ QLabel {
         event.accept()
 
     def save_preset(self):
-        # Save the current data to a preset slot in 'LU7 RP' folder
+        # Save the current data to a preset slot in 'LU7 RP' folder using JSON format
         preset_name, ok = QInputDialog.getText(
             self, 'Save Preset', 'Enter Preset Name:')
         if ok and preset_name:
@@ -392,15 +417,14 @@ QLabel {
             folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
             os.makedirs(folder_path, exist_ok=True)
 
-            file_path = os.path.join(folder_path, f"{preset_name}_preset.txt")
+            file_path = os.path.join(folder_path, f"{preset_name}_preset.json")
             with open(file_path, "w") as file:
-                for key, value in data.items():
-                    file.write(f"{key}={value}\n")
+                json.dump(data, file, indent=4)  # Use json.dump to write data in JSON format
 
             QMessageBox.information(self, "Success", f"Preset '{preset_name}' saved successfully.")
 
     def load_preset(self):
-        # Load data from a preset slot in 'LU7 RP' folder
+        # Load data from a preset slot in 'LU7 RP' folder using JSON format
         preset_list = self.get_available_presets()
 
         if not preset_list:
@@ -411,24 +435,20 @@ QLabel {
 
         if ok:
             folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
-            file_path = os.path.join(folder_path, f"{preset_name}_preset.txt")
+            file_path = os.path.join(folder_path, f"{preset_name}_preset.json")
 
             try:
                 with open(file_path, "r") as file:
-                    for line in file:
-                        key, value = line.strip().split("=")
-                        if key == "client_id":
-                            self.client_id_entry.setText(value)
-                        elif key == "state":
-                            self.state_entry.setText(value)
-                        elif key == "small_text":
-                            self.small_text_entry.setText(value)
-                        elif key == "small_image":
-                            self.small_image_entry.setText(value)
-                        elif key == "large_text":
-                            self.large_text_entry.setText(value)
-                        elif key == "large_image":
-                            self.large_image_entry.setText(value)
+                    data = json.load(file)  # Use json.load to read data in JSON format
+
+                    # Update QLineEdit widgets with loaded data
+                    self.client_id_entry.setText(data.get("client_id", ""))
+                    self.state_entry.setText(data.get("state", ""))
+                    self.small_text_entry.setText(data.get("small_text", ""))
+                    self.small_image_entry.setText(data.get("small_image", ""))
+                    self.large_text_entry.setText(data.get("large_text", ""))
+                    self.large_image_entry.setText(data.get("large_image", ""))
+                    
                 QMessageBox.information(self, "Success", f"Preset '{preset_name}' loaded successfully.")
             except FileNotFoundError:
                 QMessageBox.warning(self, "Warning", f"Preset '{preset_name}' not found.")
@@ -438,8 +458,8 @@ QLabel {
     def get_available_presets(self):
         # Get a list of available presets
         folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
-        preset_files = [file for file in os.listdir(folder_path) if file.endswith("_preset.txt")]
-        return [file.split("_preset.txt")[0] for file in preset_files]
+        preset_files = [file for file in os.listdir(folder_path) if file.endswith("_preset.json")]
+        return [file.split("_preset.json")[0] for file in preset_files]
 
     def check_for_updates(self):
         try:
@@ -484,7 +504,7 @@ QLabel {
             print(f"Error during update check: {str(e)}")
 
             # Non-blocking message box
-            QMessageBox.warning(None, "Update Check Failed", f"Failed to check for updates. See console for error details.")
+            QMessageBox.warning(None, "Update Check Failed", f"Failed to check for updates. Error: {str(e)}")
 
     def open_download_link(self, link):
         # Open the download link in the default web browser
