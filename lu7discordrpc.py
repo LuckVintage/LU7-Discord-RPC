@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QListWidget,
     QHBoxLayout,
+    QCheckBox
 )
 from PyQt5.QtCore import Qt, QTimer, QUrl
 from PyQt5.QtGui import QPalette, QColor, QIcon, QDesktopServices
@@ -20,8 +21,6 @@ from time import mktime
 import os
 import requests
 import json
-
-
 
 class DiscordRPCApp(QWidget):
     def __init__(self):
@@ -77,6 +76,12 @@ class DiscordRPCApp(QWidget):
             "This is the name of the image you would like. It must match exactly one of the images uploaded in the Discord Developer Portal."
         )
 
+        self.include_timestamp_checkbox = QCheckBox("Include Timestamp")
+        self.include_timestamp_checkbox.setToolTip(
+            "This is the 'Time elapsed' text on Discord."
+        )
+        self.include_timestamp_checkbox.setChecked(True)  # Set default to checked
+
         self.toggle_button = QPushButton("Start RPC")
         self.toggle_button.setObjectName(
             "toggleButton"
@@ -98,7 +103,7 @@ class DiscordRPCApp(QWidget):
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.5-alpha - 03 Feb 24")
+        self.version_label = QLabel("v1.0.6-alpha - 04 Feb 24")
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -109,8 +114,8 @@ class DiscordRPCApp(QWidget):
         self.small_text_label.setMinimumHeight(40)
         self.small_image_label.setMinimumHeight(40)
         self.large_text_label.setMinimumHeight(40)
-        self.large_image_label.setMinimumHeight(40)
-        self.prodwarning_label.setFixedSize(260, 20)
+        self.large_image_label.setMinimumHeight(30)
+        self.include_timestamp_checkbox.setMinimumHeight(40)
 
 
         # set fixed height for QLineEdit
@@ -120,6 +125,7 @@ class DiscordRPCApp(QWidget):
         self.small_image_entry.setFixedSize(140, 25)
         self.large_text_entry.setFixedSize(140, 25)
         self.large_image_entry.setFixedSize(140, 25)
+        self.prodwarning_label.setFixedSize(260, 20)
 
         # Set alignment to the top
         self.client_id_label.setAlignment(Qt.AlignTop)
@@ -146,6 +152,7 @@ class DiscordRPCApp(QWidget):
         layout.addRow(self.small_image_label, self.small_image_entry)
         layout.addRow(self.large_text_label, self.large_text_entry)
         layout.addRow(self.large_image_label, self.large_image_entry)
+        layout.addRow(self.include_timestamp_checkbox)  # Add the checkbox to the layout
         # Add preset buttons with styles
         self.save_preset_button = QPushButton("Save Preset")
         self.save_preset_button.clicked.connect(self.save_preset)
@@ -266,38 +273,46 @@ QLabel {
         if self.rpc_started:
             self.stop_rpc()
         else:
-            self.start_rpc()
+            if self.client_id_entry.text() and self.state_entry.text():
+                self.start_rpc()
+            else:
+                QMessageBox.warning(self, "Input Error", "You can't start the RPC without entering a Client ID and State.")
 
         # Show or hide the "Update Presence" button based on RPC state
         self.update_presence_button.setVisible(self.rpc_started)
 
     def start_rpc(self):
         self.client_id = self.client_id_entry.text()
-        try:
-            self.rpc_obj = rpc.DiscordIpcClient.for_platform(self.client_id)
-            self.start_time = mktime(time.localtime())
-            self.update_rpc_activity()
-            self.update_status_label()
-            self.toggle_button.setStyleSheet("""
-            QPushButton {
-                background-color: red;
-                color: #FFFFFF;
-                padding: 10px 15px;
-                border: none;
-                border-radius: 5px;
-            }
-            QPushButton:hover {
-                background-color: darkred;
-            }
-        """)
-            self.toggle_button.setText("Stop RPC")
-            QMessageBox.information(self, "Success", "RPC started successfully.")
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                "Error",
-                f"Error starting RPC: {str(e)}. Make sure Discord is currently running!",
-            )
+        self.state_text = self.state_entry.text()
+
+        if self.client_id and self.state_text:
+            try:
+                self.rpc_obj = rpc.DiscordIpcClient.for_platform(self.client_id)
+                self.start_time = mktime(time.localtime())
+                self.update_rpc_activity()
+                self.update_status_label()
+                self.toggle_button.setStyleSheet("""
+                QPushButton {
+                    background-color: red;
+                    color: #FFFFFF;
+                    padding: 10px 15px;
+                    border: none;
+                    border-radius: 5px;
+                }
+                QPushButton:hover {
+                    background-color: darkred;
+                }
+                """)
+                self.toggle_button.setText("Stop RPC")
+                QMessageBox.information(self, "Success", "RPC started successfully.")
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"Error starting RPC: {str(e)}. Make sure Discord is currently running!",
+                )
+        else:
+            QMessageBox.warning(self, "Input Error", "You must fill in your Client ID and State before starting the RPC.")
 
     def stop_rpc(self):
         try:
@@ -329,22 +344,33 @@ QLabel {
             QMessageBox.critical(self, "Error", f"Error stopping RPC: {str(e)}")
 
     def update_presence(self):
-        # Stop and start the RPC again to update the presence
-        self.update_rpc_activity()
-        QMessageBox.information(self, "Update Success", "Presence updated successfully.")
+        if self.client_id_entry.text() and self.state_entry.text():
+            # Stop and start the RPC again to update the presence
+            self.update_rpc_activity()
+            QMessageBox.information(self, "Update Success", "Presence updated successfully.")
+        else:
+            QMessageBox.warning(self, "Input Error", "You can't update the RPC without entering a Client ID and State.")
 
     def update_rpc_activity(self):
         current_time = mktime(time.localtime())
-        activity = {
-            "state": self.state_entry.text(),
-            "timestamps": {"start": current_time},
-            "assets": {
-                "small_text": self.small_text_entry.text(),
-                "small_image": self.small_image_entry.text(),
-                "large_text": self.large_text_entry.text(),
-                "large_image": self.large_image_entry.text(),
-            },
+        activity = {"state": self.state_entry.text()}
+
+        if self.include_timestamp_checkbox.isChecked():
+            activity["timestamps"] = {"start": current_time}
+
+        # Add assets only if they are not empty
+        assets = {
+            "small_text": self.small_text_entry.text(),
+            "small_image": self.small_image_entry.text(),
+            "large_text": self.large_text_entry.text(),
+            "large_image": self.large_image_entry.text(),
         }
+
+        non_empty_assets = {key: value for key, value in assets.items() if value}
+        
+        if non_empty_assets:
+            activity["assets"] = non_empty_assets
+
         self.rpc_obj.set_activity(activity)
         self.start_time = current_time
 
@@ -367,6 +393,7 @@ QLabel {
             "small_image": self.small_image_entry.text(),
             "large_text": self.large_text_entry.text(),
             "large_image": self.large_image_entry.text(),
+            "include_timestamp": self.include_timestamp_checkbox.isChecked(),
         }
 
         folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
@@ -392,6 +419,9 @@ QLabel {
                 self.small_image_entry.setText(data.get("small_image", ""))
                 self.large_text_entry.setText(data.get("large_text", ""))
                 self.large_image_entry.setText(data.get("large_image", ""))
+                
+                # Update timestamp checkbox
+                self.include_timestamp_checkbox.setChecked(data.get("include_timestamp", True))
         except FileNotFoundError:
             pass  # Ignore if the file is not found
 
@@ -412,6 +442,7 @@ QLabel {
                 "small_image": self.small_image_entry.text(),
                 "large_text": self.large_text_entry.text(),
                 "large_image": self.large_image_entry.text(),
+                "include_timestamp": self.include_timestamp_checkbox.isChecked(),
             }
 
             folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
@@ -449,6 +480,9 @@ QLabel {
                     self.large_text_entry.setText(data.get("large_text", ""))
                     self.large_image_entry.setText(data.get("large_image", ""))
                     
+                # Update timestamp checkbox
+                self.include_timestamp_checkbox.setChecked(data.get("include_timestamp", True))
+
                 QMessageBox.information(self, "Success", f"Preset '{preset_name}' loaded successfully.")
             except FileNotFoundError:
                 QMessageBox.warning(self, "Warning", f"Preset '{preset_name}' not found.")
