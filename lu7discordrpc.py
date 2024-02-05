@@ -1,3 +1,4 @@
+import base64
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -11,20 +12,30 @@ from PyQt5.QtWidgets import (
     QInputDialog,
     QListWidget,
     QHBoxLayout,
-    QCheckBox
+    QCheckBox,
+    QSystemTrayIcon,
+    QMenu,
+    QShortcut,
 )
-from PyQt5.QtCore import Qt, QTimer, QUrl
-from PyQt5.QtGui import QPalette, QColor, QIcon, QDesktopServices
+from PyQt5.QtCore import Qt, QTimer, QUrl, QByteArray
+from PyQt5.QtGui import QPalette, QColor, QIcon, QDesktopServices, QPixmap, QImage, QIcon, QKeySequence
 import rpc
 import time
 from time import mktime
 import os
 import requests
 import json
+import pygetwindow as gw
+import psutil
+from pynput import keyboard
 
 class DiscordRPCApp(QWidget):
     def __init__(self):
         super().__init__()
+
+        self.tray_update_triggered = False  # Initialize tray_update_triggered
+        self.rpc_started = False  # Initialize rpc_started attribute
+        self.init_hotkey() # Initialize the hotkey
 
         self.client_id_label = QLabel("Client ID:")
         self.client_id_entry = QLineEdit()
@@ -87,6 +98,7 @@ class DiscordRPCApp(QWidget):
             "toggleButton"
         )  # Set an object name for the toggle button
         self.toggle_button.clicked.connect(self.toggle_rpc)
+        self.toggle_button.setToolTip("Starts the RPC when clicked. You can also use CTRL+T.")
         self.toggle_button.setStyleSheet("""
     QPushButton#toggleButton {
         background-color: green;
@@ -103,7 +115,7 @@ class DiscordRPCApp(QWidget):
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.6-alpha - 04 Feb 24")
+        self.version_label = QLabel("v1.0.7-alpha - 05 Feb 24")
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -156,6 +168,7 @@ class DiscordRPCApp(QWidget):
         # Add preset buttons with styles
         self.save_preset_button = QPushButton("Save Preset")
         self.save_preset_button.clicked.connect(self.save_preset)
+        self.save_preset_button.setToolTip("Save the current data as a preset. You can also use CTRL+S.")
         self.save_preset_button.setStyleSheet("""
             QPushButton {
                 background-color: #007BFF;
@@ -171,6 +184,7 @@ class DiscordRPCApp(QWidget):
 
         self.load_preset_button = QPushButton("Load Preset")
         self.load_preset_button.clicked.connect(self.load_preset)
+        self.load_preset_button.setToolTip("Load a previously saved preset. You can also use CTRL+L.")
         self.load_preset_button.setStyleSheet("""
             QPushButton {
                 background-color: #007BFF;
@@ -226,7 +240,7 @@ class DiscordRPCApp(QWidget):
         self.load_data()
 
         # Check for updates using QTimer after a short delay (adjust as needed)
-        QTimer.singleShot(5000, self.check_for_updates)
+        QTimer.singleShot(3000, self.check_for_updates)
 
         # Set fixed size policy to prevent resizing
         self.setFixedSize(self.sizeHint())
@@ -264,10 +278,74 @@ QLabel {
 """
 
         self.setStyleSheet(stylesheet)
+        
+        # Create a system tray icon
+        self.create_system_tray_icon()
 
-        # Initialize RPC object to None
-        self.rpc_obj = None
-        self.rpc_started = False  # Added variable to track RPC state
+    def create_system_tray_icon(self):
+        self.tray_icon = QSystemTrayIcon(self)
+
+        # Convert the icon image to base64
+        icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.icns")
+        with open(icon_path, "rb") as image_file:
+            icon_base64 = base64.b64encode(image_file.read()).decode()
+
+        # Convert the base64 string to bytes before passing it to fromBase64
+        icon_data = QByteArray.fromBase64(icon_base64.encode())
+
+        # Use the base64-encoded image for the tray icon
+        self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(icon_data))))
+
+        # Create a context menu for the system tray icon
+        tray_menu = QMenu(self)
+
+        # Store the reference to the tray action
+        self.toggle_rpc_action = tray_menu.addAction("Start Current RPC" if not self.rpc_started else "Stop Current RPC")
+        self.toggle_rpc_action.triggered.connect(self.toggle_rpc)
+
+        # Add a divider
+        tray_menu.addSeparator()
+
+        # Add "Check for Updates" action to the context menu
+        check_updates_action = tray_menu.addAction("Check for Updates")
+        check_updates_action.triggered.connect(self.check_for_updates_from_tray)
+
+        open_data_folder_action = tray_menu.addAction("Open Data Folder")
+        open_data_folder_action.triggered.connect(self.open_data_folder)
+
+        # Add "Exit" action to the context menu
+        exit_action = tray_menu.addAction("Quit")
+        exit_action.triggered.connect(self.exit_application)
+
+        # Set the context menu for the system tray icon
+        self.tray_icon.setContextMenu(tray_menu)
+
+        # Show the system tray icon
+        self.tray_icon.show()
+
+    def exit_application(self):
+        # Close the application when "Exit" is selected from the system tray menu
+        self.save_data()  # Save data before exiting
+        self.tray_icon.hide()
+        self.close()
+
+    def init_hotkey(self):
+        # Toggle RPC hotkey
+        self.toggle_hotkey = QShortcut(QKeySequence("Ctrl+T"), self)
+        self.toggle_hotkey.activated.connect(self.toggle_rpc)
+
+        # Save preset hotkey
+        self.save_preset_hotkey = QShortcut(QKeySequence("Ctrl+S"), self)
+        self.save_preset_hotkey.activated.connect(self.save_preset)
+
+        # Load Preset hotkey
+        self.load_preset_hotkey = QShortcut(QKeySequence("Ctrl+L"), self)
+        self.load_preset_hotkey .activated.connect(self.load_preset)
+
+    def check_for_updates_from_tray(self):
+        # Set the class-level variable to True when updates are checked from the tray
+        self.tray_update_triggered = True
+        self.check_for_updates()
 
     def toggle_rpc(self):
         if self.rpc_started:
@@ -277,6 +355,34 @@ QLabel {
                 self.start_rpc()
             else:
                 QMessageBox.warning(self, "Input Error", "You can't start the RPC without entering a Client ID and State.")
+
+        # Update the text of the tray button based on the new RPC state
+        toggle_rpc_action = self.tray_icon.contextMenu().actions()[0]
+        toggle_rpc_action.setText("Stop Current RPC" if self.rpc_started else "Start Current RPC")
+
+        # Show or hide the "Update Presence" button based on RPC state
+        self.update_presence_button.setVisible(self.rpc_started)
+
+        # Initialize RPC object to None
+        self.rpc_obj = None
+        self.rpc_started = False  # Added variable to track RPC state
+
+    def open_data_folder(self):
+        # Open the folder where data is stored using the default file explorer
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+        QDesktopServices.openUrl(QUrl.fromLocalFile(folder_path))
+
+    def toggle_rpc(self):
+        if self.rpc_started:
+            self.stop_rpc()
+        else:
+            if self.client_id_entry.text() and self.state_entry.text():
+                self.start_rpc()
+            else:
+                QMessageBox.warning(self, "Input Error", "You can't start the RPC without entering a Client ID and State.")
+
+        # Update the text of the tray button based on the new RPC state
+        self.toggle_rpc_action.setText("Stop Current RPC" if self.rpc_started else "Start Current RPC")
 
         # Show or hide the "Update Presence" button based on RPC state
         self.update_presence_button.setVisible(self.rpc_started)
@@ -304,12 +410,12 @@ QLabel {
                 }
                 """)
                 self.toggle_button.setText("Stop RPC")
-                QMessageBox.information(self, "Success", "RPC started successfully.")
+                self.tray_icon.showMessage("RPC Started", "RPC started successfully.", QSystemTrayIcon.Information, 5000)
             except Exception as e:
                 QMessageBox.critical(
                     self,
                     "Error",
-                    f"Error starting RPC: {str(e)}. Make sure Discord is currently running!",
+                    f"Error starting RPC: {str(e)}.",
                 )
         else:
             QMessageBox.warning(self, "Input Error", "You must fill in your Client ID and State before starting the RPC.")
@@ -333,11 +439,8 @@ QLabel {
             }
         """)
                 self.toggle_button.setText("Start RPC")
-                QMessageBox.information(
-                    self,
-                    "Success",
-                    "RPC stopped successfully. It may take a few seconds for Discord to register the change.",
-                )
+                self.tray_icon.showMessage("RPC Stopped", "RPC stopped successfully.", QSystemTrayIcon.Information, 5000)
+            
             else:
                 QMessageBox.warning(self, "Warning", "No active RPC to stop.")
         except Exception as e:
@@ -424,6 +527,33 @@ QLabel {
                 self.include_timestamp_checkbox.setChecked(data.get("include_timestamp", True))
         except FileNotFoundError:
             pass  # Ignore if the file is not found
+
+    def is_discord_running(self):
+        try:
+            # Check if Discord is running using psutil
+            discord_processes = ['Discord', 'Discord Canary', 'Discord PTB']
+            
+            for process in psutil.process_iter(['pid', 'name']):
+                if any(discord_process in process.info['name'] for discord_process in discord_processes):
+                    return True
+
+            return False
+        except Exception as e:
+            print(f"Error checking Discord process: {str(e)}")
+            return False
+
+    def check_discord_running(self):
+        # Check if Discord is open
+        if not self.is_discord_running():
+            # Create a blocking QMessageBox
+            msg_box = QMessageBox(self)
+            msg_box.setIcon(QMessageBox.Critical)
+            msg_box.setWindowTitle("Warning")
+            msg_box.setText("LU7 Discord RPC will not function if Discord is not running. You will not be able to set a custom presence unless Discord is open.")
+            msg_box.addButton(QMessageBox.Ok)
+
+            # Make the QMessageBox blocking
+            msg_box.exec_()
 
     def closeEvent(self, event):
         # Save data when the application is closed
@@ -513,7 +643,7 @@ QLabel {
                 msg_box.setWindowTitle("Update Available")
                 msg_box.setText(f"A new version ({latest_version}) is available!")
                 msg_box.setIcon(QMessageBox.Information)
-                
+
                 # Add a "I'll update later" button
                 later_button = QPushButton("I'll update later")
                 msg_box.addButton(later_button, QMessageBox.RejectRole)
@@ -532,6 +662,10 @@ QLabel {
                 later_button.clicked.connect(msg_box.reject)
 
                 msg_box.exec_()
+            else:
+                # Show a message only if updates are manually checked from the tray
+                if self.tray_update_triggered:
+                    QMessageBox.information(self, "Update Status", f"No updates available. You are using version {self.version_label.text()}.")
 
         except requests.exceptions.RequestException as e:
             # Print the exception details
@@ -539,15 +673,18 @@ QLabel {
 
             # Non-blocking message box
             QMessageBox.warning(None, "Update Check Failed", f"Failed to check for updates. Error: {str(e)}")
+        finally:
+            # Reset the tray_update_triggered variable
+            self.tray_update_triggered = False
 
     def open_download_link(self, link):
         # Open the download link in the default web browser
         QDesktopServices.openUrl(QUrl(link))
-
 
 if __name__ == "__main__":
     app = QApplication([])
     window = DiscordRPCApp()
     window.setWindowTitle("LU7 Discord RPC")
     window.show()
+    window.check_discord_running()
     app.exec_()
