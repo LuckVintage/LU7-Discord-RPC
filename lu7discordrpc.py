@@ -1,4 +1,3 @@
-import base64
 from PyQt5.QtWidgets import (
     QApplication,
     QWidget,
@@ -16,9 +15,20 @@ from PyQt5.QtWidgets import (
     QSystemTrayIcon,
     QMenu,
     QShortcut,
+    QDialog,
+    QToolButton,
 )
 from PyQt5.QtCore import Qt, QTimer, QUrl, QByteArray
-from PyQt5.QtGui import QPalette, QColor, QIcon, QDesktopServices, QPixmap, QImage, QIcon, QKeySequence
+from PyQt5.QtGui import (
+    QPalette,
+    QColor,
+    QIcon,
+    QDesktopServices,
+    QPixmap,
+    QImage,
+    QIcon,
+    QKeySequence,
+)
 import rpc
 import time
 from time import mktime
@@ -28,14 +38,128 @@ import json
 import pygetwindow as gw
 import psutil
 from pynput import keyboard
+import qtawesome
+
+
+class SettingsWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Settings")
+        self.init_ui()
+
+    def init_ui(self):
+        # Create a tickbox called 'Automatically check for updates' with a default of checked
+        self.auto_update_checkbox = QCheckBox(
+            "Automatically check for updates on start-up"
+        )
+        self.auto_update_checkbox.setChecked(True)
+
+        # Create a save settings button
+        self.save_settings_button = QPushButton(
+            qtawesome.icon("fa5s.save", color="white"), "Save Settings"
+        )
+        self.save_settings_button.clicked.connect(self.save_settings)
+        self.save_settings_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.save_settings_button.setToolTip("Saves the above settings.")
+        self.save_settings_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #007BFF;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+        """
+        )
+
+        # Create a close window button
+        self.close_window_button = QPushButton(
+            qtawesome.icon("fa5s.times", color="white"), "Close Window"
+        )
+        self.close_window_button.clicked.connect(self.close)
+        self.close_window_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.close_window_button.setToolTip("Closes the settings window.")
+        self.close_window_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #6c757d;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """
+        )
+
+        # Add the buttons to the layout
+        button_layout = QHBoxLayout()
+        button_layout.addWidget(self.save_settings_button)
+        button_layout.addWidget(self.close_window_button)
+
+        # Add layout to the main layout
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(self.auto_update_checkbox)
+        main_layout.addLayout(button_layout)
+        self.setLayout(main_layout)
+
+        # Load settings data
+        self.load_settings()
+
+        # Set fixed size policy to prevent resizing
+        self.setFixedSize(self.sizeHint())
+
+    def save_settings(self):
+        # Save settings data to 'settings.json' file
+        data = {"auto_update": self.auto_update_checkbox.isChecked()}
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+        os.makedirs(folder_path, exist_ok=True)
+        file_path = os.path.join(folder_path, "settings.json")
+        with open(file_path, "w") as file:
+            json.dump(data, file, indent=4)
+
+        # Show a pop-up window
+        QMessageBox.information(self, "Settings Saved", "Settings saved successfully.")
+
+    def load_settings(self):
+        # Load settings data from 'settings.json' file
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+        file_path = os.path.join(folder_path, "settings.json")
+
+        try:
+            with open(file_path, "r") as file:
+                data = json.load(file)
+                auto_update = data.get("auto_update", True)
+                self.auto_update_checkbox.setChecked(auto_update)
+                return data  # Return the loaded settings
+        except FileNotFoundError:
+            # Create the file with default data
+            default_data = {"auto_update": True}
+            with open(file_path, "w") as file:
+                json.dump(default_data, file, indent=4)
+
+            return default_data  # Return the default data
+
 
 class DiscordRPCApp(QWidget):
     def __init__(self):
         super().__init__()
 
+        self.settings_window = SettingsWindow(parent=self)
+        self.setObjectName("mainWindow")  # Initialize main application window
         self.tray_update_triggered = False  # Initialize tray_update_triggered
         self.rpc_started = False  # Initialize rpc_started attribute
-        self.init_hotkey() # Initialize the hotkey
+        self.init_hotkey()  # Initialize the hotkey
 
         self.client_id_label = QLabel("Client ID:")
         self.client_id_entry = QLineEdit()
@@ -98,8 +222,14 @@ class DiscordRPCApp(QWidget):
             "toggleButton"
         )  # Set an object name for the toggle button
         self.toggle_button.clicked.connect(self.toggle_rpc)
-        self.toggle_button.setToolTip("Starts the RPC when clicked. You can also use CTRL+T.")
-        self.toggle_button.setStyleSheet("""
+        self.toggle_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.toggle_button.setToolTip(
+            "Starts the RPC when clicked. You can also use CTRL+T."
+        )
+        self.toggle_button.setStyleSheet(
+            """
     QPushButton#toggleButton {
         background-color: green;
         color: white;
@@ -110,12 +240,19 @@ class DiscordRPCApp(QWidget):
     QPushButton#toggleButton:hover {
         background-color: darkgreen;
     }
-""")
+"""
+        )
 
+        # Set the 'play' icon for the initial state
+        toggle_icon_name = "play" if not self.rpc_started else "stop"
+        self.toggle_button.setIcon(QIcon())  # Clear existing icon
+        self.toggle_button.setIcon(
+            qtawesome.icon(f"fa5s.{toggle_icon_name}", color="white")
+        )
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.7-alpha - 05 Feb 24")
+        self.version_label = QLabel("v1.0.8-alpha - 06 Feb 24")
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -128,7 +265,6 @@ class DiscordRPCApp(QWidget):
         self.large_text_label.setMinimumHeight(40)
         self.large_image_label.setMinimumHeight(30)
         self.include_timestamp_checkbox.setMinimumHeight(40)
-
 
         # set fixed height for QLineEdit
         self.client_id_entry.setFixedSize(140, 25)
@@ -146,7 +282,6 @@ class DiscordRPCApp(QWidget):
         self.small_image_label.setAlignment(Qt.AlignTop)
         self.large_text_label.setAlignment(Qt.AlignTop)
         self.large_image_label.setAlignment(Qt.AlignTop)
-        
 
         self.client_id_entry.setToolTipDuration(
             5000
@@ -158,6 +293,28 @@ class DiscordRPCApp(QWidget):
         self.large_image_entry.setToolTipDuration(5000)
 
         layout = QFormLayout()
+
+        # Create the settings button with a cog icon using qtawesome
+        cog_icon = qtawesome.icon(
+            "fa.cogs", color="black"
+        )  # Replace "black" with your desired color
+        self.settings_icon = QLabel()
+        self.settings_icon.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.settings_icon.setPixmap(cog_icon.pixmap(20, 20))
+        self.settings_icon.setToolTip("Click to open Settings")
+        self.settings_icon.mousePressEvent = lambda event: self.show_settings_window()
+
+        # Create a horizontal layout for the settings icon and current status
+        status_and_settings_layout = QHBoxLayout()
+        status_and_settings_layout.addWidget(self.current_status_label)
+        status_and_settings_layout.addStretch()  # Add stretch to push the settings icon to the right
+        status_and_settings_layout.addWidget(self.settings_icon)
+
+        # Add the bottom-right layout to the main form layout
+        layout = QFormLayout()
+
         layout.addRow(self.client_id_label, self.client_id_entry)
         layout.addRow(self.state_label, self.state_entry)
         layout.addRow(self.small_text_label, self.small_text_entry)
@@ -166,10 +323,18 @@ class DiscordRPCApp(QWidget):
         layout.addRow(self.large_image_label, self.large_image_entry)
         layout.addRow(self.include_timestamp_checkbox)  # Add the checkbox to the layout
         # Add preset buttons with styles
-        self.save_preset_button = QPushButton("Save Preset")
+        self.save_preset_button = QPushButton(
+            qtawesome.icon("fa5s.save", color="white"), "Save Preset"
+        )
         self.save_preset_button.clicked.connect(self.save_preset)
-        self.save_preset_button.setToolTip("Save the current data as a preset. You can also use CTRL+S.")
-        self.save_preset_button.setStyleSheet("""
+        self.save_preset_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.save_preset_button.setToolTip(
+            "Save the current data as a preset. You can also use CTRL+S."
+        )
+        self.save_preset_button.setStyleSheet(
+            """
             QPushButton {
                 background-color: #007BFF;
                 color: #FFFFFF;
@@ -180,12 +345,21 @@ class DiscordRPCApp(QWidget):
             QPushButton:hover {
                 background-color: #0056b3;
             }
-        """)
+        """
+        )
 
-        self.load_preset_button = QPushButton("Load Preset")
+        self.load_preset_button = QPushButton(
+            qtawesome.icon("fa5s.download", color="white"), "Load Preset"
+        )
         self.load_preset_button.clicked.connect(self.load_preset)
-        self.load_preset_button.setToolTip("Load a previously saved preset. You can also use CTRL+L.")
-        self.load_preset_button.setStyleSheet("""
+        self.load_preset_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.load_preset_button.setToolTip(
+            "Load a previously saved preset. You can also use CTRL+L."
+        )
+        self.load_preset_button.setStyleSheet(
+            """
             QPushButton {
                 background-color: #007BFF;
                 color: #FFFFFF;
@@ -196,24 +370,32 @@ class DiscordRPCApp(QWidget):
             QPushButton:hover {
                 background-color: #0056b3;
             }
-        """)
+        """
+        )
 
         # Create "Update Presence" button
-        self.update_presence_button = QPushButton("Update Presence")
+        self.update_presence_button = QPushButton(
+            qtawesome.icon("fa5s.sync-alt", color="white"), "Update Presence"
+        )
+        self.update_presence_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
         self.update_presence_button.setObjectName("updatePresenceButton")
         self.update_presence_button.clicked.connect(self.update_presence)
-        self.update_presence_button.setStyleSheet("""
+        self.update_presence_button.setStyleSheet(
+            """
             QPushButton#updatePresenceButton {
                 background-color: purple;
                 color: #FFFFFF;
-                padding: 10px 15px;
+                padding: 100% 15px;
                 border: none;
                 border-radius: 5px;
             }
             QPushButton#updatePresenceButton:hover {
                 background-color: #4C00A4;
             }
-        """)
+        """
+        )
 
         # Initially hide the "Update Presence" button
         self.update_presence_button.hide()
@@ -228,11 +410,10 @@ class DiscordRPCApp(QWidget):
 
         layout.addRow(self.toggle_button)
         layout.addRow(self.update_presence_button)
-        layout.addRow(self.current_status_label)
+        layout.addRow(status_and_settings_layout)
         layout.setVerticalSpacing(5)
         layout.addRow(self.version_label)
         layout.addRow(self.prodwarning_label)
-
 
         self.setLayout(layout)
 
@@ -240,14 +421,15 @@ class DiscordRPCApp(QWidget):
         self.load_data()
 
         # Check for updates using QTimer after a short delay (adjust as needed)
-        QTimer.singleShot(3000, self.check_for_updates)
+        if self.settings_window.load_settings().get("auto_update", False):
+            QTimer.singleShot(3000, self.check_for_updates)
 
         # Set fixed size policy to prevent resizing
         self.setFixedSize(self.sizeHint())
 
         # Set application icon
         icon_path = os.path.join(
-            os.path.dirname(os.path.realpath(__file__)), "logo.icns"
+            os.path.dirname(os.path.realpath(__file__)), "logo.png"
         )
         self.setWindowIcon(QIcon(icon_path))
 
@@ -259,7 +441,8 @@ class DiscordRPCApp(QWidget):
 
         # Apply stylesheet
         stylesheet = """
-QWidget {
+
+ #mainWindow {
     background-color: #f0f0f0;
     color: #333;
     font-family: Arial, sans-serif;
@@ -278,29 +461,25 @@ QLabel {
 """
 
         self.setStyleSheet(stylesheet)
-        
+
         # Create a system tray icon
         self.create_system_tray_icon()
 
     def create_system_tray_icon(self):
         self.tray_icon = QSystemTrayIcon(self)
 
-        # Convert the icon image to base64
-        icon_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.icns")
-        with open(icon_path, "rb") as image_file:
-            icon_base64 = base64.b64encode(image_file.read()).decode()
-
-        # Convert the base64 string to bytes before passing it to fromBase64
-        icon_data = QByteArray.fromBase64(icon_base64.encode())
-
-        # Use the base64-encoded image for the tray icon
-        self.tray_icon.setIcon(QIcon(QPixmap.fromImage(QImage.fromData(icon_data))))
+        # Use the image for the tray icon
+        self.tray_icon.setIcon(
+            QIcon(os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.png"))
+        )
 
         # Create a context menu for the system tray icon
         tray_menu = QMenu(self)
 
         # Store the reference to the tray action
-        self.toggle_rpc_action = tray_menu.addAction("Start Current RPC" if not self.rpc_started else "Stop Current RPC")
+        self.toggle_rpc_action = tray_menu.addAction(
+            "Start Current RPC" if not self.rpc_started else "Stop Current RPC"
+        )
         self.toggle_rpc_action.triggered.connect(self.toggle_rpc)
 
         # Add a divider
@@ -310,8 +489,18 @@ QLabel {
         check_updates_action = tray_menu.addAction("Check for Updates")
         check_updates_action.triggered.connect(self.check_for_updates_from_tray)
 
+        # Add "Settings" action to the context menu
+        settings_action = tray_menu.addAction("Settings")
+        settings_action.triggered.connect(self.show_settings_window)
+
+        # Add a divider
+        tray_menu.addSeparator()
+
         open_data_folder_action = tray_menu.addAction("Open Data Folder")
         open_data_folder_action.triggered.connect(self.open_data_folder)
+
+        # Add a divider
+        tray_menu.addSeparator()
 
         # Add "Exit" action to the context menu
         exit_action = tray_menu.addAction("Quit")
@@ -340,12 +529,17 @@ QLabel {
 
         # Load Preset hotkey
         self.load_preset_hotkey = QShortcut(QKeySequence("Ctrl+L"), self)
-        self.load_preset_hotkey .activated.connect(self.load_preset)
+        self.load_preset_hotkey.activated.connect(self.load_preset)
 
     def check_for_updates_from_tray(self):
         # Set the class-level variable to True when updates are checked from the tray
         self.tray_update_triggered = True
         self.check_for_updates()
+
+    def show_settings_window(self):
+        # Instantiate and show the SettingsWindow
+        self.settings_window = SettingsWindow(self)
+        self.settings_window.exec_()
 
     def toggle_rpc(self):
         if self.rpc_started:
@@ -354,14 +548,25 @@ QLabel {
             if self.client_id_entry.text() and self.state_entry.text():
                 self.start_rpc()
             else:
-                QMessageBox.warning(self, "Input Error", "You can't start the RPC without entering a Client ID and State.")
+                QMessageBox.warning(
+                    self,
+                    "Input Error",
+                    "You can't start the RPC without entering a Client ID and State.",
+                )
 
         # Update the text of the tray button based on the new RPC state
-        toggle_rpc_action = self.tray_icon.contextMenu().actions()[0]
-        toggle_rpc_action.setText("Stop Current RPC" if self.rpc_started else "Start Current RPC")
+        self.toggle_rpc_action.setText(
+            "Stop Current RPC" if self.rpc_started else "Start Current RPC"
+        )
 
         # Show or hide the "Update Presence" button based on RPC state
         self.update_presence_button.setVisible(self.rpc_started)
+
+        # Update the toggle button's icon based on RPC state
+        toggle_icon_name = "stop" if self.rpc_started else "play"  # Fixed this line
+        self.toggle_button.setIcon(QIcon())  # Clear existing icon
+        toggle_icon = qtawesome.icon(f"fa5s.{toggle_icon_name}", color="white")
+        self.toggle_button.setIcon(toggle_icon)
 
         # Initialize RPC object to None
         self.rpc_obj = None
@@ -379,13 +584,25 @@ QLabel {
             if self.client_id_entry.text() and self.state_entry.text():
                 self.start_rpc()
             else:
-                QMessageBox.warning(self, "Input Error", "You can't start the RPC without entering a Client ID and State.")
+                QMessageBox.warning(
+                    self,
+                    "Input Error",
+                    "You can't start the RPC without entering a Client ID and State.",
+                )
 
         # Update the text of the tray button based on the new RPC state
-        self.toggle_rpc_action.setText("Stop Current RPC" if self.rpc_started else "Start Current RPC")
+        self.toggle_rpc_action.setText(
+            "Stop Current RPC" if self.rpc_started else "Start Current RPC"
+        )
 
         # Show or hide the "Update Presence" button based on RPC state
         self.update_presence_button.setVisible(self.rpc_started)
+
+        # Update the toggle button's icon based on RPC state
+        toggle_icon_name = "stop" if self.rpc_started else "play"  # Fixed this line
+        self.toggle_button.setIcon(QIcon())  # Clear existing icon
+        toggle_icon = qtawesome.icon(f"fa5s.{toggle_icon_name}", color="white")
+        self.toggle_button.setIcon(toggle_icon)
 
     def start_rpc(self):
         self.client_id = self.client_id_entry.text()
@@ -397,20 +614,27 @@ QLabel {
                 self.start_time = mktime(time.localtime())
                 self.update_rpc_activity()
                 self.update_status_label()
-                self.toggle_button.setStyleSheet("""
+                self.toggle_button.setStyleSheet(
+                    """
                 QPushButton {
                     background-color: red;
                     color: #FFFFFF;
-                    padding: 10px 15px;
+                    padding: 100% 15px;
                     border: none;
                     border-radius: 5px;
                 }
                 QPushButton:hover {
                     background-color: darkred;
                 }
-                """)
+                """
+                )
                 self.toggle_button.setText("Stop RPC")
-                self.tray_icon.showMessage("RPC Started", "RPC started successfully.", QSystemTrayIcon.Information, 5000)
+                self.tray_icon.showMessage(
+                    "RPC Started",
+                    "RPC started successfully.",
+                    QSystemTrayIcon.Information,
+                    5000,
+                )
             except Exception as e:
                 QMessageBox.critical(
                     self,
@@ -418,7 +642,11 @@ QLabel {
                     f"Error starting RPC: {str(e)}.",
                 )
         else:
-            QMessageBox.warning(self, "Input Error", "You must fill in your Client ID and State before starting the RPC.")
+            QMessageBox.warning(
+                self,
+                "Input Error",
+                "You must fill in your Client ID and State before starting the RPC.",
+            )
 
     def stop_rpc(self):
         try:
@@ -426,7 +654,8 @@ QLabel {
                 self.rpc_obj.close()
                 self.rpc_obj = None  # Set to None after stopping
                 self.update_status_label()
-                self.toggle_button.setStyleSheet("""
+                self.toggle_button.setStyleSheet(
+                    """
             QPushButton {
                 background-color: green;
                 color: #FFFFFF;
@@ -437,10 +666,16 @@ QLabel {
             QPushButton:hover {
                 background-color: darkgreen;
             }
-        """)
+        """
+                )
                 self.toggle_button.setText("Start RPC")
-                self.tray_icon.showMessage("RPC Stopped", "RPC stopped successfully.", QSystemTrayIcon.Information, 5000)
-            
+                self.tray_icon.showMessage(
+                    "RPC Stopped",
+                    "RPC stopped successfully.",
+                    QSystemTrayIcon.Information,
+                    5000,
+                )
+
             else:
                 QMessageBox.warning(self, "Warning", "No active RPC to stop.")
         except Exception as e:
@@ -450,9 +685,18 @@ QLabel {
         if self.client_id_entry.text() and self.state_entry.text():
             # Stop and start the RPC again to update the presence
             self.update_rpc_activity()
-            QMessageBox.information(self, "Update Success", "Presence updated successfully.")
+            self.tray_icon.showMessage(
+                "Update Success",
+                "Presence updated successfully.",
+                QSystemTrayIcon.Information,
+                5000,
+            )
         else:
-            QMessageBox.warning(self, "Input Error", "You can't update the RPC without entering a Client ID and State.")
+            QMessageBox.warning(
+                self,
+                "Input Error",
+                "You can't update the RPC without entering a Client ID and State.",
+            )
 
     def update_rpc_activity(self):
         current_time = mktime(time.localtime())
@@ -470,7 +714,7 @@ QLabel {
         }
 
         non_empty_assets = {key: value for key, value in assets.items() if value}
-        
+
         if non_empty_assets:
             activity["assets"] = non_empty_assets
 
@@ -504,7 +748,9 @@ QLabel {
 
         file_path = os.path.join(folder_path, "discord_rpc_data.json")
         with open(file_path, "w") as file:
-            json.dump(data, file, indent=4)  # Use json.dump to write data in JSON format
+            json.dump(
+                data, file, indent=4
+            )  # Use json.dump to write data in JSON format
 
     def load_data(self):
         # Load data from a file in 'LU7 RP' folder using JSON format
@@ -522,19 +768,24 @@ QLabel {
                 self.small_image_entry.setText(data.get("small_image", ""))
                 self.large_text_entry.setText(data.get("large_text", ""))
                 self.large_image_entry.setText(data.get("large_image", ""))
-                
+
                 # Update timestamp checkbox
-                self.include_timestamp_checkbox.setChecked(data.get("include_timestamp", True))
+                self.include_timestamp_checkbox.setChecked(
+                    data.get("include_timestamp", True)
+                )
         except FileNotFoundError:
             pass  # Ignore if the file is not found
 
     def is_discord_running(self):
         try:
             # Check if Discord is running using psutil
-            discord_processes = ['Discord', 'Discord Canary', 'Discord PTB']
-            
-            for process in psutil.process_iter(['pid', 'name']):
-                if any(discord_process in process.info['name'] for discord_process in discord_processes):
+            discord_processes = ["Discord", "Discord Canary", "Discord PTB"]
+
+            for process in psutil.process_iter(["pid", "name"]):
+                if any(
+                    discord_process in process.info["name"]
+                    for discord_process in discord_processes
+                ):
                     return True
 
             return False
@@ -549,7 +800,9 @@ QLabel {
             msg_box = QMessageBox(self)
             msg_box.setIcon(QMessageBox.Critical)
             msg_box.setWindowTitle("Warning")
-            msg_box.setText("LU7 Discord RPC will not function if Discord is not running. You will not be able to set a custom presence unless Discord is open.")
+            msg_box.setText(
+                "LU7 Discord RPC will not function if Discord is not running. You will not be able to set a custom presence unless Discord is open."
+            )
             msg_box.addButton(QMessageBox.Ok)
 
             # Make the QMessageBox blocking
@@ -563,7 +816,8 @@ QLabel {
     def save_preset(self):
         # Save the current data to a preset slot in 'LU7 RP' folder using JSON format
         preset_name, ok = QInputDialog.getText(
-            self, 'Save Preset', 'Enter Preset Name:')
+            self, "Save Preset", "Enter Preset Name:"
+        )
         if ok and preset_name:
             data = {
                 "client_id": self.client_id_entry.text(),
@@ -580,9 +834,13 @@ QLabel {
 
             file_path = os.path.join(folder_path, f"{preset_name}_preset.json")
             with open(file_path, "w") as file:
-                json.dump(data, file, indent=4)  # Use json.dump to write data in JSON format
+                json.dump(
+                    data, file, indent=4
+                )  # Use json.dump to write data in JSON format
 
-            QMessageBox.information(self, "Success", f"Preset '{preset_name}' saved successfully.")
+            QMessageBox.information(
+                self, "Success", f"Preset '{preset_name}' saved successfully."
+            )
 
     def load_preset(self):
         # Load data from a preset slot in 'LU7 RP' folder using JSON format
@@ -592,7 +850,9 @@ QLabel {
             QMessageBox.warning(self, "Warning", "No presets found.")
             return
 
-        preset_name, ok = QInputDialog.getItem(self, "Load Preset", "Select a Preset:", preset_list, 0, False)
+        preset_name, ok = QInputDialog.getItem(
+            self, "Load Preset", "Select a Preset:", preset_list, 0, False
+        )
 
         if ok:
             folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
@@ -609,29 +869,39 @@ QLabel {
                     self.small_image_entry.setText(data.get("small_image", ""))
                     self.large_text_entry.setText(data.get("large_text", ""))
                     self.large_image_entry.setText(data.get("large_image", ""))
-                    
-                # Update timestamp checkbox
-                self.include_timestamp_checkbox.setChecked(data.get("include_timestamp", True))
 
-                QMessageBox.information(self, "Success", f"Preset '{preset_name}' loaded successfully.")
+                # Update timestamp checkbox
+                self.include_timestamp_checkbox.setChecked(
+                    data.get("include_timestamp", True)
+                )
+
+                QMessageBox.information(
+                    self, "Success", f"Preset '{preset_name}' loaded successfully."
+                )
             except FileNotFoundError:
-                QMessageBox.warning(self, "Warning", f"Preset '{preset_name}' not found.")
+                QMessageBox.warning(
+                    self, "Warning", f"Preset '{preset_name}' not found."
+                )
             except Exception as e:
-                QMessageBox.critical(self, "Error", f"Error loading preset '{preset_name}': {str(e)}")
+                QMessageBox.critical(
+                    self, "Error", f"Error loading preset '{preset_name}': {str(e)}"
+                )
 
     def get_available_presets(self):
         # Get a list of available presets
         folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
-        preset_files = [file for file in os.listdir(folder_path) if file.endswith("_preset.json")]
+        preset_files = [
+            file for file in os.listdir(folder_path) if file.endswith("_preset.json")
+        ]
         return [file.split("_preset.json")[0] for file in preset_files]
 
     def check_for_updates(self):
         try:
             # Replace 'https://lu7rpcupdate.pages.dev/version.txt' with the URL of the text file containing the latest version number
-            update_url = 'https://lu7rpcupdate.pages.dev/version.txt'
+            update_url = "https://lu7rpcupdate.pages.dev/version.txt"
 
             # Fetch the latest version number using requests
-            response = requests.get(update_url, headers={'User-Agent': 'Mozilla/5.0'})
+            response = requests.get(update_url, headers={"User-Agent": "Mozilla/5.0"})
             response.raise_for_status()
 
             latest_version = response.text.strip()
@@ -651,28 +921,46 @@ QLabel {
                 # Add a spacer to push the "Download" button to the right
                 spacer = QWidget()
                 spacer.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-                msg_box.layout().addWidget(spacer, msg_box.layout().rowCount(), 0, 1, msg_box.layout().columnCount())
+                msg_box.layout().addWidget(
+                    spacer,
+                    msg_box.layout().rowCount(),
+                    0,
+                    1,
+                    msg_box.layout().columnCount(),
+                )
 
                 # Add a "Download" button
                 download_button = QPushButton("Download now from Github")
                 msg_box.addButton(download_button, QMessageBox.AcceptRole)
 
                 # Connect button clicks to corresponding functions
-                download_button.clicked.connect(lambda: self.open_download_link('https://github.com/LuckVintage/LU7-Discord-RPC/releases'))
+                download_button.clicked.connect(
+                    lambda: self.open_download_link(
+                        "https://github.com/LuckVintage/LU7-Discord-RPC/releases"
+                    )
+                )
                 later_button.clicked.connect(msg_box.reject)
 
                 msg_box.exec_()
             else:
                 # Show a message only if updates are manually checked from the tray
                 if self.tray_update_triggered:
-                    QMessageBox.information(self, "Update Status", f"No updates available. You are using version {self.version_label.text()}.")
+                    QMessageBox.information(
+                        self,
+                        "Update Status",
+                        f"No updates available. You are using version {self.version_label.text()}.",
+                    )
 
         except requests.exceptions.RequestException as e:
             # Print the exception details
             print(f"Error during update check: {str(e)}")
 
             # Non-blocking message box
-            QMessageBox.warning(None, "Update Check Failed", f"Failed to check for updates. Error: {str(e)}")
+            QMessageBox.warning(
+                None,
+                "Update Check Failed",
+                f"Failed to check for updates. Error: {str(e)}",
+            )
         finally:
             # Reset the tray_update_triggered variable
             self.tray_update_triggered = False
@@ -680,6 +968,7 @@ QLabel {
     def open_download_link(self, link):
         # Open the download link in the default web browser
         QDesktopServices.openUrl(QUrl(link))
+
 
 if __name__ == "__main__":
     app = QApplication([])
