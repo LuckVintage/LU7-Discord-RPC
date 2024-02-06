@@ -5,7 +5,7 @@ a = Analysis(
     ['lu7discordrpc.py'],
     pathex=[],
     binaries=[],
-    datas=[('logo.icns', '.')],
+    datas=[('logo.png', '.')],
     hiddenimports=['PyQt5'],
     hookspath=[],
     hooksconfig={},
@@ -34,11 +34,11 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['logo.icns'],
+    icon=['logo.png'],
 )
 app = BUNDLE(
     exe,
     name='LU7 Discord RPC.app',
-    icon='logo.icns',
+    icon='logo.png',
     bundle_identifier=None,
 )
