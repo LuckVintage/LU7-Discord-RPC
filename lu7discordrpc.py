@@ -17,6 +17,8 @@ from PyQt5.QtWidgets import (
     QShortcut,
     QDialog,
     QToolButton,
+    QAction,
+    QTextEdit,
 )
 from PyQt5.QtCore import Qt, QTimer, QUrl, QByteArray
 from PyQt5.QtGui import (
@@ -39,6 +41,7 @@ import pygetwindow as gw
 import psutil
 from pynput import keyboard
 import qtawesome
+import platform
 
 
 class SettingsWindow(QDialog):
@@ -46,6 +49,9 @@ class SettingsWindow(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.init_ui()
+
+        # Load settings data
+        self.load_settings()
 
     def init_ui(self):
         # Create a tickbox called 'Automatically check for updates' with a default of checked
@@ -113,9 +119,6 @@ class SettingsWindow(QDialog):
         main_layout.addLayout(button_layout)
         self.setLayout(main_layout)
 
-        # Load settings data
-        self.load_settings()
-
         # Set fixed size policy to prevent resizing
         self.setFixedSize(self.sizeHint())
 
@@ -143,6 +146,8 @@ class SettingsWindow(QDialog):
                 self.auto_update_checkbox.setChecked(auto_update)
                 return data  # Return the loaded settings
         except FileNotFoundError:
+            # Create the directory if it doesn't exist
+            os.makedirs(folder_path, exist_ok=True)
             # Create the file with default data
             default_data = {"auto_update": True}
             with open(file_path, "w") as file:
@@ -252,7 +257,7 @@ class DiscordRPCApp(QWidget):
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.8-alpha - 06 Feb 24")
+        self.version_label = QLabel("v1.0.9-alpha - 07 Feb 24")
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -400,13 +405,14 @@ class DiscordRPCApp(QWidget):
         # Initially hide the "Update Presence" button
         self.update_presence_button.hide()
 
-        # Create a horizontal layout for the buttons
-        button_layout = QHBoxLayout()
-        button_layout.addWidget(self.save_preset_button)
-        button_layout.addWidget(self.load_preset_button)
+        # Create a horizontal layout for the preset buttons
+        preset_button_layout = QHBoxLayout()
+        preset_button_layout.addWidget(self.save_preset_button)
+        preset_button_layout.addSpacing(5)  # Add spacing between the buttons
+        preset_button_layout.addWidget(self.load_preset_button)
 
         # Add the horizontal layout to the main form layout
-        layout.addRow(button_layout)
+        layout.addRow(preset_button_layout)
 
         layout.addRow(self.toggle_button)
         layout.addRow(self.update_presence_button)
@@ -485,6 +491,11 @@ QLabel {
         # Add a divider
         tray_menu.addSeparator()
 
+        # Add a non-clickable action for update status to the context menu
+        self.update_status_action = QAction("You are running the latest version", self)
+        self.update_status_action.setEnabled(False)  # Make it non-clickable initially
+        tray_menu.addAction(self.update_status_action)
+
         # Add "Check for Updates" action to the context menu
         check_updates_action = tray_menu.addAction("Check for Updates")
         check_updates_action.triggered.connect(self.check_for_updates_from_tray)
@@ -493,11 +504,19 @@ QLabel {
         settings_action = tray_menu.addAction("Settings")
         settings_action.triggered.connect(self.show_settings_window)
 
+        # Add "About" action to the context menu
+        settings_action = tray_menu.addAction("About")
+        settings_action.triggered.connect(self.show_about_window)
+
         # Add a divider
         tray_menu.addSeparator()
 
         open_data_folder_action = tray_menu.addAction("Open Data Folder")
         open_data_folder_action.triggered.connect(self.open_data_folder)
+
+        # Add "GitHub Repository" action to the context menu
+        github_action = tray_menu.addAction("Github")
+        github_action.triggered.connect(self.open_github_repository)
 
         # Add a divider
         tray_menu.addSeparator()
@@ -531,6 +550,10 @@ QLabel {
         self.load_preset_hotkey = QShortcut(QKeySequence("Ctrl+L"), self)
         self.load_preset_hotkey.activated.connect(self.load_preset)
 
+    def open_github_repository(self):
+        github_url = "https://github.com/LuckVintage/LU7-Discord-RPC"
+        QDesktopServices.openUrl(QUrl(github_url))
+
     def check_for_updates_from_tray(self):
         # Set the class-level variable to True when updates are checked from the tray
         self.tray_update_triggered = True
@@ -539,6 +562,11 @@ QLabel {
     def show_settings_window(self):
         # Instantiate and show the SettingsWindow
         self.settings_window = SettingsWindow(self)
+        self.settings_window.exec_()
+
+    def show_about_window(self):
+        # Instantiate and show the SettingsWindow
+        self.settings_window = AboutWindow(self)
         self.settings_window.exec_()
 
     def toggle_rpc(self):
@@ -782,16 +810,15 @@ QLabel {
             discord_processes = ["Discord", "Discord Canary", "Discord PTB"]
 
             for process in psutil.process_iter(["pid", "name"]):
+                process_name = process.info["name"].lower()
                 if any(
-                    discord_process in process.info["name"]
+                    discord_process.lower() in process_name
                     for discord_process in discord_processes
                 ):
                     return True
-
-            return False
         except Exception as e:
-            print(f"Error checking Discord process: {str(e)}")
-            return False
+            print("Error checking Discord process:", e)  # Debug print
+        return False
 
     def check_discord_running(self):
         # Check if Discord is open
@@ -908,6 +935,7 @@ QLabel {
 
             # Compare the versions
             if latest_version != self.version_label.text():
+                self.update_status_action.setText("Update Available")
                 # Custom QMessageBox with "Download" and "I'll update later" buttons
                 msg_box = QMessageBox()
                 msg_box.setWindowTitle("Update Available")
@@ -943,6 +971,7 @@ QLabel {
 
                 msg_box.exec_()
             else:
+                self.update_status_action.setText("You are running the latest version")
                 # Show a message only if updates are manually checked from the tray
                 if self.tray_update_triggered:
                     QMessageBox.information(
@@ -969,6 +998,81 @@ QLabel {
         # Open the download link in the default web browser
         QDesktopServices.openUrl(QUrl(link))
 
+class AboutWindow(QDialog):
+    def __init__(self, version_label, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("About")
+        self.init_ui()
+
+    def init_ui(self):
+        # Create QLabel for logo
+        logo_label = QLabel()
+        logo_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.png")
+        pixmap = QPixmap(logo_path).scaled(50, 50, Qt.KeepAspectRatio)
+        logo_label.setPixmap(pixmap)
+        logo_label.setAlignment(Qt.AlignCenter)
+
+        title_label = QLabel("LU7 Discord RPC")
+        title_label.setAlignment(Qt.AlignCenter)
+
+        # Create QTextEdit for license
+        license_edit = QTextEdit()
+        license_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "LICENSE.txt")
+        with open(license_path, "r") as file:
+            license_text = file.read()
+        license_edit.setPlainText(license_text)
+        license_edit.setReadOnly(True)
+
+
+        # Create QLabel for the message with clickable link
+        thanks_label = QLabel(
+            "Special thanks to <a href='https://github.com/niveshbirangal'>niveshbirangal</a>"
+            " for the Python code available at "
+            "<a href='https://github.com/niveshbirangal/discord-rpc'>https://github.com/niveshbirangal/discord-rpc</a>."
+            " The LU7 Discord RPC app wouldn't be possible without his code contributions!"
+        )
+        thanks_label.setOpenExternalLinks(True)
+        thanks_label.setTextInteractionFlags(Qt.TextBrowserInteraction)
+        thanks_label.setWordWrap(True)
+
+        copyright_label = QLabel("Copyright \u00A9 Andrew Peacock 2024")
+        copyright_label.setAlignment(Qt.AlignBottom)
+        # Create a close window button
+        self.close_window_button = QPushButton(
+            qtawesome.icon("fa5s.times", color="white"), "Close Window"
+        )
+        self.close_window_button.clicked.connect(self.close)
+        self.close_window_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.close_window_button.setToolTip("Closes the about window.")
+        self.close_window_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #6c757d;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """
+        )
+
+        # Add layout to the main layout
+        main_layout = QVBoxLayout()
+        main_layout.addWidget(logo_label)
+        main_layout.addWidget(title_label)
+        main_layout.addWidget(license_edit)  # Add license text
+        main_layout.addWidget(thanks_label)
+        main_layout.addWidget(copyright_label)
+        main_layout.addWidget(self.close_window_button)
+        self.setLayout(main_layout)
+
+        # Set fixed size policy to prevent resizing
+        self.setFixedSize(self.sizeHint())
 
 if __name__ == "__main__":
     app = QApplication([])
