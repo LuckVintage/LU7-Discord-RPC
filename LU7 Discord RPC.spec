@@ -5,7 +5,7 @@ a = Analysis(
     ['lu7discordrpc.py'],
     pathex=[],
     binaries=[],
-    datas=[('logo.png', '.')],
+    datas=[('logo.png', '.'), ('LICENSE.txt', '.')],
     hiddenimports=['PyQt5'],
     hookspath=[],
     hooksconfig={},
