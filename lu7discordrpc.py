@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QToolButton,
     QAction,
     QTextEdit,
+    QFileDialog,
 )
 from PyQt5.QtCore import Qt, QTimer, QUrl, QByteArray
 from PyQt5.QtGui import (
@@ -42,6 +43,16 @@ import psutil
 from pynput import keyboard
 import qtawesome
 import platform
+import shutil
+from functools import partial
+import sys
+
+version = "v1.1.0-alpha - 08 Feb 24"
+
+if sys.platform == "darwin":
+    modifier_key = "⌘"
+else:
+    modifier_key = "CTRL"
 
 
 class SettingsWindow(QDialog):
@@ -231,7 +242,7 @@ class DiscordRPCApp(QWidget):
             Qt.PointingHandCursor
         )  # Change cursor to a pointing hand
         self.toggle_button.setToolTip(
-            "Starts the RPC when clicked. You can also use CTRL+T."
+            "Starts the RPC when clicked. You can also use {}+T.".format(modifier_key)
         )
         self.toggle_button.setStyleSheet(
             """
@@ -257,7 +268,7 @@ class DiscordRPCApp(QWidget):
         self.current_status_label = QLabel("Current Status: Stopped")
         self.current_status_label.setStyleSheet("color: red;")
 
-        self.version_label = QLabel("v1.0.9-alpha - 07 Feb 24")
+        self.version_label = QLabel(version)
         self.prodwarning_label = QLabel("WARNING: NOT PRODUCTION READY!")
         self.version_label.setAlignment(Qt.AlignCenter)
         self.prodwarning_label.setAlignment(Qt.AlignCenter)
@@ -299,10 +310,8 @@ class DiscordRPCApp(QWidget):
 
         layout = QFormLayout()
 
-        # Create the settings button with a cog icon using qtawesome
-        cog_icon = qtawesome.icon(
-            "fa.cogs", color="black"
-        )  # Replace "black" with your desired color
+        # Create the settings button
+        cog_icon = qtawesome.icon("fa.cog", color="grey")
         self.settings_icon = QLabel()
         self.settings_icon.setCursor(
             Qt.PointingHandCursor
@@ -311,11 +320,37 @@ class DiscordRPCApp(QWidget):
         self.settings_icon.setToolTip("Click to open Settings")
         self.settings_icon.mousePressEvent = lambda event: self.show_settings_window()
 
+        # Create the open data folder button
+        open_folder_icon = qtawesome.icon("fa.folder-open", color="grey")
+        self.open_folder_icon = QLabel()
+        self.open_folder_icon.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.open_folder_icon.setPixmap(open_folder_icon.pixmap(20, 20))
+        self.open_folder_icon.setToolTip("Click to open data folder")
+        self.open_folder_icon.mousePressEvent = lambda event: self.open_data_folder()
+
+        # Create the import/export window button
+        import_export_window_icon = qtawesome.icon("fa5s.file-archive", color="grey")
+        self.import_export_window_icon = QLabel()
+        self.import_export_window_icon.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.import_export_window_icon.setPixmap(
+            import_export_window_icon.pixmap(20, 20)
+        )
+        self.import_export_window_icon.setToolTip("Import or Export your data")
+        self.import_export_window_icon.mousePressEvent = (
+            lambda event: self.show_import_export_data__window()
+        )
+
         # Create a horizontal layout for the settings icon and current status
         status_and_settings_layout = QHBoxLayout()
         status_and_settings_layout.addWidget(self.current_status_label)
         status_and_settings_layout.addStretch()  # Add stretch to push the settings icon to the right
         status_and_settings_layout.addWidget(self.settings_icon)
+        status_and_settings_layout.addWidget(self.import_export_window_icon)
+        status_and_settings_layout.addWidget(self.open_folder_icon)
 
         # Add the bottom-right layout to the main form layout
         layout = QFormLayout()
@@ -336,7 +371,9 @@ class DiscordRPCApp(QWidget):
             Qt.PointingHandCursor
         )  # Change cursor to a pointing hand
         self.save_preset_button.setToolTip(
-            "Save the current data as a preset. You can also use CTRL+S."
+            "Save the current data as a preset. You can also use {}+S.".format(
+                modifier_key
+            )
         )
         self.save_preset_button.setStyleSheet(
             """
@@ -361,7 +398,9 @@ class DiscordRPCApp(QWidget):
             Qt.PointingHandCursor
         )  # Change cursor to a pointing hand
         self.load_preset_button.setToolTip(
-            "Load a previously saved preset. You can also use CTRL+L."
+            "Load a previously saved preset. You can also use {}+L.".format(
+                modifier_key
+            )
         )
         self.load_preset_button.setStyleSheet(
             """
@@ -511,6 +550,17 @@ QLabel {
         # Add a divider
         tray_menu.addSeparator()
 
+        # Add "Export" action to the context menu
+        settings_action = tray_menu.addAction("Export data")
+        settings_action.triggered.connect(self.export_data)
+
+        # Add "Import" action to the context menu
+        settings_action = tray_menu.addAction("Import data")
+        settings_action.triggered.connect(self.import_data_dialog)
+
+        # Add a divider
+        tray_menu.addSeparator()
+
         open_data_folder_action = tray_menu.addAction("Open Data Folder")
         open_data_folder_action.triggered.connect(self.open_data_folder)
 
@@ -564,10 +614,67 @@ QLabel {
         self.settings_window = SettingsWindow(self)
         self.settings_window.exec_()
 
+    def show_import_export_data__window(self):
+        # Instantiate and show the SettingsWindow
+        self.settings_window = ImportExportDataWindow(self)
+        self.settings_window.exec_()
+
     def show_about_window(self):
         # Instantiate and show the SettingsWindow
         self.settings_window = AboutWindow(self)
         self.settings_window.exec_()
+
+    def import_data_dialog(self):
+        # Open a file dialog for the user to select the zip file to import
+        file_dialog = QFileDialog(self)
+        file_dialog.setFileMode(QFileDialog.ExistingFile)
+        file_dialog.setNameFilter("Zip files (*.zip)")
+        if file_dialog.exec_():
+            selected_files = file_dialog.selectedFiles()
+            if selected_files:
+                zip_path = selected_files[0]
+                self.import_data(zip_path)
+
+    def export_data(self):
+        # Open a file dialog for the user to select the destination folder
+        folder_dialog = QFileDialog(self)
+        folder_dialog.setFileMode(QFileDialog.Directory)
+        folder_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+        folder_dialog.setWindowTitle("Select Export Folder")
+        if folder_dialog.exec_():
+            selected_folder = folder_dialog.selectedFiles()
+            if selected_folder:
+                export_folder = selected_folder[0]
+
+                # Get the path of the LU7 RP folder
+                folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+
+                # Create a zip file containing all files and subdirectories in the LU7 RP folder
+                shutil.make_archive("LU7_RP_data", "zip", folder_path)
+
+                # Move the zip file to the selected export folder
+                shutil.move(
+                    "LU7_RP_data.zip", os.path.join(export_folder, "LU7_RP_data.zip")
+                )
+
+                QMessageBox.information(
+                    self,
+                    "Export Successful",
+                    "Data exported successfully.",
+                )
+
+    def import_data(self, zip_path):
+        # Get the path of the LU7 RP folder
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+
+        # Extract the contents of the zip file to the LU7 RP folder
+        shutil.unpack_archive(zip_path, folder_path, "zip")
+
+        QMessageBox.information(
+            self,
+            "Import Successful",
+            "Data imported successfully.",
+        )
 
     def toggle_rpc(self):
         if self.rpc_started:
@@ -928,13 +1035,13 @@ QLabel {
             update_url = "https://lu7rpcupdate.pages.dev/version.txt"
 
             # Fetch the latest version number using requests
-            response = requests.get(update_url, headers={"User-Agent": "Mozilla/5.0"})
+            response = requests.get(update_url, headers={"User-Agent": "LU7-RPC-APP"})
             response.raise_for_status()
 
             latest_version = response.text.strip()
 
             # Compare the versions
-            if latest_version != self.version_label.text():
+            if latest_version != version:
                 self.update_status_action.setText("Update Available")
                 # Custom QMessageBox with "Download" and "I'll update later" buttons
                 msg_box = QMessageBox()
@@ -998,6 +1105,7 @@ QLabel {
         # Open the download link in the default web browser
         QDesktopServices.openUrl(QUrl(link))
 
+
 class AboutWindow(QDialog):
     def __init__(self, version_label, parent=None):
         super().__init__(parent)
@@ -1007,22 +1115,27 @@ class AboutWindow(QDialog):
     def init_ui(self):
         # Create QLabel for logo
         logo_label = QLabel()
-        logo_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "logo.png")
+        logo_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "logo.png"
+        )
         pixmap = QPixmap(logo_path).scaled(50, 50, Qt.KeepAspectRatio)
         logo_label.setPixmap(pixmap)
         logo_label.setAlignment(Qt.AlignCenter)
 
         title_label = QLabel("LU7 Discord RPC")
         title_label.setAlignment(Qt.AlignCenter)
+        version_label = QLabel(version)
+        version_label.setAlignment(Qt.AlignCenter)
 
         # Create QTextEdit for license
         license_edit = QTextEdit()
-        license_path = os.path.join(os.path.dirname(os.path.realpath(__file__)), "LICENSE.txt")
+        license_path = os.path.join(
+            os.path.dirname(os.path.realpath(__file__)), "LICENSE.txt"
+        )
         with open(license_path, "r") as file:
             license_text = file.read()
         license_edit.setPlainText(license_text)
         license_edit.setReadOnly(True)
-
 
         # Create QLabel for the message with clickable link
         thanks_label = QLabel(
@@ -1036,7 +1149,7 @@ class AboutWindow(QDialog):
         thanks_label.setWordWrap(True)
 
         copyright_label = QLabel("Copyright \u00A9 Andrew Peacock 2024")
-        copyright_label.setAlignment(Qt.AlignBottom)
+        copyright_label.setAlignment(Qt.AlignCenter)
         # Create a close window button
         self.close_window_button = QPushButton(
             qtawesome.icon("fa5s.times", color="white"), "Close Window"
@@ -1065,6 +1178,7 @@ class AboutWindow(QDialog):
         main_layout = QVBoxLayout()
         main_layout.addWidget(logo_label)
         main_layout.addWidget(title_label)
+        main_layout.addWidget(version_label)
         main_layout.addWidget(license_edit)  # Add license text
         main_layout.addWidget(thanks_label)
         main_layout.addWidget(copyright_label)
@@ -1073,6 +1187,131 @@ class AboutWindow(QDialog):
 
         # Set fixed size policy to prevent resizing
         self.setFixedSize(self.sizeHint())
+
+
+class ImportExportDataWindow(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export and Import data")
+        self.init_ui()
+
+    def init_ui(self):
+        main_layout = QVBoxLayout()
+
+        # Create a form layout to hold the buttons
+        layout = QFormLayout()
+
+        # Create a close window button
+        self.close_window_button = QPushButton(
+            qtawesome.icon("fa5s.times", color="white"), "Close Window"
+        )
+        self.close_window_button.clicked.connect(self.close)
+        self.close_window_button.setCursor(
+            Qt.PointingHandCursor
+        )  # Change cursor to a pointing hand
+        self.close_window_button.setToolTip("Closes the window.")
+        self.close_window_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #6c757d;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #5a6268;
+            }
+        """
+        )
+
+        # Create "Export Data" button
+        self.export_data_button = QPushButton(
+            qtawesome.icon("fa5s.arrow-circle-down", color="white"), "Export Data"
+        )
+        self.export_data_button.setObjectName("exportDataButton")
+        # Connect the clicked signal to the export_data method
+        self.export_data_button.clicked.connect(
+            partial(DiscordRPCApp.export_data, self)
+        )
+        self.export_data_button.setCursor(Qt.PointingHandCursor)
+        self.export_data_button.setToolTip("Export data to a zip file")
+        self.export_data_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #007BFF;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            """
+        )
+
+        # Create "Import Data" button
+        self.import_data_button = QPushButton(
+            qtawesome.icon("fa5s.arrow-circle-up", color="white"), "Import Data"
+        )
+        self.export_data_button.setObjectName("exportDataButton")
+        self.import_data_button.setObjectName("importDataButton")
+        # Connect the clicked signal to the import_data_dialog method
+        # Connect the clicked signal to the import_data_dialog method of DiscordRPCApp
+        self.import_data_button.clicked.connect(
+            partial(DiscordRPCApp.import_data_dialog, self)
+        )
+        self.import_data_button.setCursor(Qt.PointingHandCursor)
+        self.import_data_button.setToolTip("Import data from a zip file")
+        self.import_data_button.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #007BFF;
+                color: #FFFFFF;
+                padding: 10px 15px;
+                border: none;
+                border-radius: 5px;
+            }
+            QPushButton:hover {
+                background-color: #0056b3;
+            }
+            """
+        )
+
+        # Create a horizontal layout for the export and import buttons
+        export_import_layout = QHBoxLayout()
+        export_import_layout.addWidget(self.export_data_button)
+        export_import_layout.addWidget(self.import_data_button)
+
+        # Add the export and import buttons to the form layout
+        layout.addRow(export_import_layout)
+
+        # Add the form layout to the main layout
+        main_layout.addLayout(layout)
+
+        # Add the close window button to the main layout
+        main_layout.addWidget(self.close_window_button)
+
+        # Set the main layout for the dialog
+        self.setLayout(main_layout)
+
+        # Set fixed size policy to prevent resizing
+        self.setFixedSize(self.sizeHint())
+
+    def import_data(self, zip_path):
+        # Get the path of the LU7 RP folder
+        folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+
+        # Extract the contents of the zip file to the LU7 RP folder
+        shutil.unpack_archive(zip_path, folder_path, "zip")
+
+        QMessageBox.information(
+            self,
+            "Import Successful",
+            "Data imported successfully.",
+        )
+
 
 if __name__ == "__main__":
     app = QApplication([])
