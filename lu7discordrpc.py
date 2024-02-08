@@ -46,8 +46,9 @@ import platform
 import shutil
 from functools import partial
 import sys
+import tempfile
 
-version = "v1.1.0-alpha - 08 Feb 24"
+version = "v1.1.1-alpha - 08 Feb 24"
 
 if sys.platform == "darwin":
     modifier_key = "⌘"
@@ -636,32 +637,44 @@ QLabel {
                 self.import_data(zip_path)
 
     def export_data(self):
-        # Open a file dialog for the user to select the destination folder
-        folder_dialog = QFileDialog(self)
-        folder_dialog.setFileMode(QFileDialog.Directory)
-        folder_dialog.setOption(QFileDialog.ShowDirsOnly, True)
-        folder_dialog.setWindowTitle("Select Export Folder")
-        if folder_dialog.exec_():
-            selected_folder = folder_dialog.selectedFiles()
-            if selected_folder:
-                export_folder = selected_folder[0]
+        try:
+            # Open a file dialog for the user to select the destination folder
+            folder_dialog = QFileDialog(self)
+            folder_dialog.setFileMode(QFileDialog.Directory)
+            folder_dialog.setOption(QFileDialog.ShowDirsOnly, True)
+            folder_dialog.setWindowTitle("Select Export Folder")
+            if folder_dialog.exec_():
+                selected_folder = folder_dialog.selectedFiles()
+                if selected_folder:
+                    export_folder = selected_folder[0]
 
-                # Get the path of the LU7 RP folder
-                folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
+                    # Get the path of the LU7 RP folder
+                    folder_path = os.path.join(os.path.expanduser("~"), "LU7 RP")
 
-                # Create a zip file containing all files and subdirectories in the LU7 RP folder
-                shutil.make_archive("LU7_RP_data", "zip", folder_path)
+                    # Create a temporary directory for the export
+                    temp_dir = tempfile.mkdtemp()
 
-                # Move the zip file to the selected export folder
-                shutil.move(
-                    "LU7_RP_data.zip", os.path.join(export_folder, "LU7_RP_data.zip")
-                )
+                    # Create a zip file containing all files and subdirectories in the LU7 RP folder
+                    zip_path = os.path.join(temp_dir, "LU7_RP_data.zip")
+                    shutil.make_archive(os.path.splitext(zip_path)[0], "zip", folder_path)
 
-                QMessageBox.information(
-                    self,
-                    "Export Successful",
-                    "Data exported successfully.",
-                )
+                    # Move the zip file to the selected export folder
+                    shutil.move(zip_path, os.path.join(export_folder, "LU7_RP_data.zip"))
+
+                    # Cleanup temporary directory
+                    shutil.rmtree(temp_dir)
+
+                    QMessageBox.information(
+                        self,
+                        "Export Successful",
+                        "Data exported successfully.",
+                    )
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Export Error",
+                f"An error occurred during export: {str(e)}",
+            )
 
     def import_data(self, zip_path):
         # Get the path of the LU7 RP folder
