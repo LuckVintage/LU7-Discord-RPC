@@ -56,4 +56,4 @@ To install LU7 Discord RPC on your computer, download the latest release for you
 
 ## :warning: License
 
-Distributed under the MIT License v3.0. See LICENSE.txt for more information.
+Distributed under the MIT License. See LICENSE.txt for more information.
